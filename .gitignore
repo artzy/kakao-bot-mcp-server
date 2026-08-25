@@ -1,0 +1,6 @@
+.venv/
+.kauth.json
+.accounts.json
+.oauth2.*.json
+__pycache__/
+*.pyc

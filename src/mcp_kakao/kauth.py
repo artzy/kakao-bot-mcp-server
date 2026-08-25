@@ -62,7 +62,8 @@ CLIENTSECRETS_LOCATION = get_kauth_file()
 # Configuration - should be moved to environment variables
 REDIRECT_URI = "http://localhost:8000/code"
 TOKEN_INFO_URL = "https://kapi.kakao.com/v1/user/access_token_info"
-SCOPES = ["openid", "profile_nickname", "talk_message", "account_email"]
+# account_email needs a biz app; fall back to .accounts.json when it is unavailable
+SCOPES = ["openid", "profile_nickname", "talk_message"]
 
 
 class GetCredentialsException(Exception):
@@ -373,17 +374,20 @@ def get_user_info(credentials: OAuth2Credentials):
         # Parse JSON response
         user_info = response.json()
 
-        # Verify the user has an ID
-        if (
-            not user_info
-            or "kakao_account" not in user_info
-            or "email" not in user_info["kakao_account"]
-        ):
-            logging.error("No user ID found in response")
+        # Verify the user has an ID. Email is optional when the app has no email scope.
+        if not user_info or "kakao_account" not in user_info:
+            logging.error("No kakao_account found in response")
             raise NoUserEmailException()
 
-        # Store refreshed credentials with user ID if we just refreshed the token
-        email_address = user_info["kakao_account"]["email"]
+        email_address = user_info.get("kakao_account", {}).get("email")
+        if not email_address:
+            accounts = get_account_info()
+            if not accounts:
+                logging.error("No user email found in response or .accounts.json")
+                raise NoUserEmailException()
+            email_address = accounts[0].email
+            user_info.setdefault("kakao_account", {})["email"] = email_address
+
         store_credentials(credentials, email_address=email_address)
         return user_info
     except TokenRefreshError as e:
